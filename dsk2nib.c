@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/stat.h>
 
 /********** symbolic constants **********/
 #define VERSION_MAJOR       1
@@ -327,7 +328,7 @@ void nib_reset( void )
     int i;
     for ( i = 0; i < TRACKS_PER_DISK; i++ )
         if ( nib_buf[ i ] )
-            free( nib_buf );
+            free( nib_buf[i] );
 }
 
 //
