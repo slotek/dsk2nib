@@ -11,10 +11,8 @@
 #include <sys/stat.h>
 
 /********** Symbolic Constants **********/
-#define DEBUG
-
 #define VERSION_MAJOR       1
-#define VERSION_MINOR       0
+#define VERSION_MINOR       1
 
 #define TRACKS_PER_DISK     35
 #define SECTORS_PER_TRACK   16
@@ -30,7 +28,6 @@
 typedef unsigned char uchar;
 
 /********** Statics **********/
-static char *ueof = "Unexpected End of File";
 static uchar addr_prolog[] = { 0xd5, 0xaa, 0x96 };
 static uchar addr_epilog[] = { 0xde, 0xaa, 0xeb };
 static uchar data_prolog[] = { 0xd5, 0xaa, 0xad };
@@ -57,6 +54,7 @@ void dsk_write( void );
 void usage( char *path );
 void myprintf( char *format, ... );
 void fatal( char *format, ... );
+void ueof( int state );
 
 int main( int argc, char **argv )
 {
@@ -97,6 +95,8 @@ int main( int argc, char **argv )
     close( outfd );
     dsk_reset();
 
+    myprintf("\n");
+
     return 0;
 }
 
@@ -116,7 +116,7 @@ void convert_image( void )
     // Image conversion FSM
     //
     if ( get_byte( &byte ) == 0 )
-        fatal( ueof );
+        ueof( state );
 
     for ( state = STATE_INIT; state != STATE_DONE; ) {
 
@@ -144,7 +144,7 @@ void convert_image( void )
                     ++addr_prolog_index;
                     ++state;
                     if ( get_byte( &byte ) == 0 )
-                        fatal( ueof );
+                        ueof( state );
                 } else
                     state = 0;
                 break;
@@ -156,13 +156,13 @@ void convert_image( void )
             {
                 uchar byte2;
                 if ( get_byte( &byte2 ) == 0 )
-                    fatal( ueof );
+                    ueof( state );
                 volume = odd_even_decode( byte, byte2 );
                 myprintf( "V:%02x ", volume );
-                myprintf( "{%02x%02x} ", byte, byte2 );
+                myprintf( "{%02x%02x}\n", byte, byte2 );
                 ++state;
                 if ( get_byte( &byte ) == 0 )
-                    fatal( ueof );
+                    ueof( state );
                 break;
             }
 
@@ -173,13 +173,13 @@ void convert_image( void )
             {
                 uchar byte2;
                 if ( get_byte( &byte2 ) == 0 )
-                    fatal( ueof );
+                    ueof( state );
                 track = odd_even_decode( byte, byte2 );
                 myprintf( "T:%02x ", track );
-                myprintf( "{%02x%02x} ", byte, byte2 );
+                myprintf( "{%02x%02x}\n", byte, byte2 );
                 ++state;
                 if ( get_byte( &byte ) == 0 )
-                    fatal( ueof );
+                    ueof( state );
                 break;
             }
 
@@ -190,13 +190,13 @@ void convert_image( void )
             {
                 uchar byte2;
                 if ( get_byte( &byte2 ) == 0 )
-                    fatal( ueof );
+                    ueof( state );
                 sector = odd_even_decode( byte, byte2 );
                 myprintf( "S:%02x ", sector );
-                myprintf( "{%02x%02x} ", byte, byte2 );
+                myprintf( "{%02x%02x}\n", byte, byte2 );
                 ++state;
                 if ( get_byte( &byte ) == 0 )
-                    fatal( ueof );
+                    ueof( state );
                 break;
             }
 
@@ -207,13 +207,13 @@ void convert_image( void )
             {
                 uchar byte2, csum;
                 if ( get_byte( &byte2 ) == 0 )
-                    fatal( ueof );
+                    ueof( state );
                 csum = odd_even_decode( byte, byte2 );
                 myprintf( "C:%02x ", csum );
-                myprintf( "{%02x%02x} - ", byte, byte2 );
+                myprintf( "{%02x%02x} -\n", byte, byte2 );
                 ++state;
                 if ( get_byte( &byte ) == 0 )
-                    fatal( ueof );
+                    ueof( state );
                 break;
             }
 
@@ -226,7 +226,7 @@ void convert_image( void )
                     ++addr_epilog_index;
                     ++state;
                     if ( get_byte( &byte ) == 0 )
-                        fatal( ueof );
+                        ueof( state );
                 } else {
                     myprintf( "Reset!\n" );
                     state = 0;
@@ -240,7 +240,7 @@ void convert_image( void )
                 if ( byte == addr_epilog[ addr_epilog_index ] ) {
                     ++state;
                     if ( get_byte( &byte ) == 0 )
-                        fatal( ueof );
+                        ueof( state );
                 } else {
                     myprintf( "Reset!\n" );
                     state = 0;
@@ -257,7 +257,7 @@ void convert_image( void )
                     ++state;
                 }
                 if ( get_byte( &byte ) == 0 )
-                    fatal( ueof );
+                    ueof( state );
                 break;
 
             //
@@ -269,9 +269,17 @@ void convert_image( void )
                     ++data_prolog_index;
                     ++state;
                     if ( get_byte( &byte ) == 0 )
-                        fatal( ueof );
-                } else
+                        ueof( state );
+                } else {
+		    myprintf( "%s byte was %02x, "
+			      "expecting data prolog of %02x %02x %02x\n",
+			      ( data_prolog_index == 1 ) ? "Second" : "Third",
+			      byte,
+			      data_prolog[ 0 ],
+			      data_prolog[ 1 ],
+			      data_prolog[ 2 ] );
                     state = 9;
+		}
                 break;
 
             //
@@ -282,7 +290,7 @@ void convert_image( void )
                 myprintf( "OK!\n" );
                 ++state;
                 if ( get_byte( &byte ) == 0 )
-                    fatal( ueof );
+                    ueof( state );
                 break;
 
             //
@@ -303,7 +311,7 @@ void convert_image( void )
                 } else
                     ++extra;
                 if ( get_byte( &byte ) == 0 )
-                    fatal( ueof );
+                    ueof( state );
                 break;
             }
 
@@ -315,7 +323,7 @@ void convert_image( void )
                     ++data_epilog_index;
                     ++state;
                     if ( get_byte( &byte ) == 0 )
-                        fatal( ueof );
+                        ueof( state );
                 } else
                     fatal( "data epilog mismatch (%02x)\n", byte );
                 break;
@@ -360,14 +368,14 @@ void process_data( uchar byte )
 
     for ( i = 1; i < SECONDARY_BUF_LEN; i++ ) {
         if ( get_byte( &byte ) == 0 )
-            fatal( ueof );
+            fatal( "Unexpected End of File in process_data()" );
         checksum ^= untranslate( byte );
         secondary_buf[ i ] = checksum;
     }
 
     for ( i = 0; i < PRIMARY_BUF_LEN; i++ ) {
         if ( get_byte( &byte ) == 0 )
-            fatal( ueof );
+            fatal( "Unexpected End of File in process_data()" );
         checksum ^= untranslate( byte );
         primary_buf[ i ] = checksum;
     }
@@ -376,7 +384,7 @@ void process_data( uchar byte )
     // Validate resultant checksum
     //
     if ( get_byte( &byte ) == 0 )
-        fatal( ueof );
+      fatal( "Unexpected End of File in process_data()" );
     checksum ^= untranslate( byte );
     if ( checksum != 0 )
         printf( "Warning: data checksum mismatch\n" );
@@ -465,7 +473,7 @@ int get_byte( uchar *byte )
     static int index = BUFLEN;
     static int buflen = BUFLEN;
 
-    myprintf("(%d)", index);
+    myprintf("\r(%d)", index);
 
     if ( index >= buflen ) {
         if ( ( buflen = read( infd, buf, BUFLEN ) ) == -1 )
@@ -551,4 +559,12 @@ void fatal( char *format, ... )
     printf( "\n" );
 
     exit( 1 );
+}
+
+//
+// ueof: fatal unexpected end of file
+//
+void ueof ( int state ) {
+    myprintf ( "In state %d: ", state );
+    fatal( "Unexpected End of File" );
 }
